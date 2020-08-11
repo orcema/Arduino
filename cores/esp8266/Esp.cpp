@@ -669,8 +669,14 @@ bool EspClass::flashEraseSector(uint32_t sector) {
 }
 
 #if PUYA_SUPPORT
+#if PUYA_BUFFER_SIZE % 256 != 0
+#error PUYA_BUFFER_SIZE is not 256 byte aligned
+#endif
 static SpiFlashOpResult spi_flash_write_puya(uint32_t offset, uint32_t *data, size_t size) {
     if (data == nullptr) {
+      return SPI_FLASH_RESULT_ERR;
+    }
+    if (size % 4 != 0) {
       return SPI_FLASH_RESULT_ERR;
     }
     // PUYA flash chips need to read existing data, update in memory and write modified data again.
@@ -697,16 +703,15 @@ static SpiFlashOpResult spi_flash_write_puya(uint32_t offset, uint32_t *data, si
         } else {
             bytesLeft = 0;
         }
-        size_t bytesAligned = (bytesNow + 3) & ~3;
-        rc = spi_flash_read(pos, flash_write_puya_buf, bytesAligned);
+        rc = spi_flash_read(pos, flash_write_puya_buf, bytesNow);
         if (rc != SPI_FLASH_RESULT_OK) {
             return rc;
         }
-        for (size_t i = 0; i < bytesAligned / 4; ++i) {
+        for (size_t i = 0; i < bytesNow / 4; ++i) {
             flash_write_puya_buf[i] &= *ptr;
             ++ptr;
         }
-        rc = spi_flash_write(pos, flash_write_puya_buf, bytesAligned);
+        rc = spi_flash_write(pos, flash_write_puya_buf, bytesNow);
         pos += bytesNow;
     }
     return rc;
@@ -715,20 +720,35 @@ static SpiFlashOpResult spi_flash_write_puya(uint32_t offset, uint32_t *data, si
 
 bool EspClass::flashWrite(uint32_t offset, uint32_t *data, size_t size) {
     SpiFlashOpResult rc = SPI_FLASH_RESULT_OK;
+    size_t sizeAligned = size & ~3;
 #if PUYA_SUPPORT
     if (getFlashChipVendorId() == SPI_FLASH_VENDOR_PUYA) {
-        rc = spi_flash_write_puya(offset, data, size);
+        rc = spi_flash_write_puya(offset, data, sizeAligned);
     }
     else
 #endif
     {
-        rc = spi_flash_write(offset, data, size);
+        rc = spi_flash_write(offset, data, sizeAligned);
+    }
+    if (sizeAligned < size) {
+        uint32_t tempData;
+        SpiFlashOpResult rc = spi_flash_read(offset + sizeAligned, &tempData, 4);
+        if (rc == SPI_FLASH_RESULT_OK) {
+            memcpy(&tempData, (uint8_t *)data + sizeAligned, size - sizeAligned);
+            rc = spi_flash_write(offset + sizeAligned, &tempData, 4);
+        }
     }
     return rc == SPI_FLASH_RESULT_OK;
 }
 
 bool EspClass::flashRead(uint32_t offset, uint32_t *data, size_t size) {
-    auto rc = spi_flash_read(offset, (uint32_t*) data, size);
+    size_t sizeAligned = size & ~3;
+    auto rc = spi_flash_read(offset, data, sizeAligned);
+    if (sizeAligned < size) {
+        uint32_t tempData;
+        rc = spi_flash_read(offset + sizeAligned, &tempData, 4);
+        memcpy((uint8_t *)data + sizeAligned, &tempData, size - sizeAligned);
+    }
     return rc == SPI_FLASH_RESULT_OK;
 }
 
