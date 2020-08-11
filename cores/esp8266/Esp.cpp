@@ -37,9 +37,9 @@ extern struct rst_info resetInfo;
 
 //#define DEBUG_SERIAL Serial
 
-#ifndef PUYA_SUPPORT
-  #define PUYA_SUPPORT 1
-#endif
+//#ifndef PUYA_SUPPORT
+//  #define PUYA_SUPPORT 1
+//#endif
 #ifndef PUYA_BUFFER_SIZE
   // Good alternative for buffer size is: SPI_FLASH_SEC_SIZE (= 4k)
   // Always use a multiple of flash page size (256 bytes)
